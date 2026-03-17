@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "eulumdat-ugr"
+version = "0.0.1"
+description = "UGR (Unified Glare Rating) calculation from EULUMDAT (.ldt) photometric files — extension to eulumdat-py"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "123VincentB" }]
+requires-python = ">=3.9"
+dependencies = [
+    "eulumdat-py>=1.0.0",
+]
+keywords = ["eulumdat", "ldt", "photometry", "lighting", "ugr", "glare", "cie117", "cie190"]
+classifiers = [
+    "Development Status :: 1 - Planning",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+
+[project.urls]
+Homepage = "https://github.com/123VincentB/eulumdat-ugr"
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "twine",
+]
