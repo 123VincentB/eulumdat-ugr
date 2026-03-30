@@ -149,11 +149,13 @@ class GuthTable:
             np.nan if (H/R, T/R) is outside the table range or adjacent to a
             missing cell — the luminaire must be excluded from the UGR sum.
         """
-        if cls._interpolator is None:
-            cls._interpolator = cls._build_interpolator()
+        interp = cls._interpolator
+        if interp is None:
+            interp = cls._build_interpolator()
+            cls._interpolator = interp
 
         h_r = abs(float(h_r))
         t_r = abs(float(t_r))
 
-        result = cls._interpolator([[t_r, h_r]])
+        result = interp([[t_r, h_r]])
         return float(result[0])
