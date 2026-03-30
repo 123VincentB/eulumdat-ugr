@@ -9,13 +9,16 @@ description = "UGR (Unified Glare Rating) calculation from EULUMDAT (.ldt) photo
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "123VincentB" }]
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 dependencies = [
     "eulumdat-py>=1.0.0",
+    "eulumdat-luminance>=1.2.0",
+    "numpy>=1.24.0",
+    "scipy>=1.10.0",
 ]
 keywords = ["eulumdat", "ldt", "photometry", "lighting", "ugr", "glare", "cie117", "cie190"]
 classifiers = [
-    "Development Status :: 1 - Planning",
+    "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Science/Research",
     "Topic :: Scientific/Engineering :: Physics",
     "License :: OSI Approved :: MIT License",
@@ -29,4 +32,12 @@ Homepage = "https://github.com/123VincentB/eulumdat-ugr"
 dev = [
     "build",
     "twine",
+    "pytest>=7.0",
+    "pytest-cov",
 ]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
