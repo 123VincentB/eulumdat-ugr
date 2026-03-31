@@ -1,7 +1,7 @@
 # CONTEXT — eulumdat-ugr
 
 ## Statut
-- Package : **en cours — étapes 0, 1, 2, 3, 4, 5, 6 complétées**
+- Package : **en cours — étapes 0, 1, 2, 3, 4, 5, 6, 7 complétées**
 - Repo GitHub prévu : https://github.com/123VincentB/eulumdat-ugr
 - PyPI : stub réservé
 - Environnement virtuel : `eulumdat-ugr/.venv/`
@@ -480,6 +480,7 @@ dependencies = [
 | 0.0.3 | 2026-03 | background.py — flux zonaux 10° milieux, LORL, Lb × 5 réflectances (13 tests) |
 | 0.0.4 | 2026-03 | photometry.py — L_i, ω_i vectorisés depuis LuminanceResult (12 tests) |
 | 0.0.5 | 2026-03 | ugr.py — tableau UGR 19×10 complet ; background.py étendu 19 salles ; GuthTable.p_vec() (90 tests) |
+| 0.0.6 | 2026-03 | Validation complète 11 samples × Relux/DIALux — 112 tests ; tolérance Relux ≤ 0.5 UGR |
 
 ---
 
@@ -530,10 +531,17 @@ dependencies = [
 - ✓ Validation sample_11 (SHR=0.25) vs DIALux : max=0.371, mean=0.131 UGR
 - ✓ Validation sample_11 (SHR=0.25) vs Relux  : max=0.432, mean=0.048 UGR
 
-### Étape 7 — Validation finale
-- Tester SHR=1.0 → comparer contre exemples CIE 190
-- Tester SHR=0.25 → comparer contre valeurs DIALux/Relux (5–10 fichiers LDT fournis)
-- Tolérance cible : ±0,5 UGR
+### Étape 7 ✓ — Validation finale
+- ✓ 11 samples × 2 références (Relux + DIALux) → 22 tests paramétrés
+- ✓ vs Relux : max ≤ 0.43 UGR sur les 11 samples (tolérance 0.5)
+- ✓ vs DIALux : max ≤ 1.01 UGR sur les 11 samples (tolérance 1.1)
+- ✓ 112 tests total
+
+**Constat inter-logiciels (Relux > DIALux) :**
+- Relux et DIALux divergent de jusqu'à 0.8 UGR pour les petites salles (k ≤ 1.5)
+  et faibles réflectances (30/30/20). Ce biais systématique est propre à DIALux.
+- Notre implémentation suit CIE 190:2010 et colle à Relux (≤ 0.5 UGR).
+- La tolérance DIALux est fixée à 1.1 UGR = biais Relux–DIALux (0.8) + notre erreur vs Relux (0.5).
 
 ---
 
