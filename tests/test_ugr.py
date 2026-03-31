@@ -24,9 +24,12 @@ import numpy as np
 import pytest
 from pyldt import LdtReader
 
+from eulumdat_luminance import LuminanceCalculator
+
 from eulumdat_ugr.background import BackgroundLuminance
 from eulumdat_ugr.geometry import UgrGrid
 from eulumdat_ugr.guth import GuthTable
+from eulumdat_ugr.photometry import UgrPhotometry
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "input"
 
@@ -614,3 +617,147 @@ class TestBackgroundLuminance:
         lb2 = BackgroundLuminance.compute(ldt, n_luminaires=self.N_SHR1, a_w=192.0)
         ratio = lb1["70/50/20"] / lb2["70/50/20"]
         assert ratio == pytest.approx(2.0, rel=1e-6)
+
+
+# ---------------------------------------------------------------------------
+# TestUgrPhotometry — CIE 117:1995 eq. 4.3–4.4
+# ---------------------------------------------------------------------------
+
+
+class TestUgrPhotometry:
+    """
+    Tests for UgrPhotometry.compute().
+
+    Reference geometry: sample_11, SHR=1.0, 4H×8H, crosswise.
+    - 32 luminaires all pass the T/R ≤ 3 and γ ≤ 85° filters.
+    - sample_11: rectangular luminaire 1000 mm × 316 mm, h_lum = 0 on all sides.
+    - LuminanceResult built with full=True (g_axis = 0°…180°).
+
+    Spot-check values (first luminaire after grid sort, crosswise):
+      C[0] ≈ 71.565°, γ[0] ≈ 57.688°, r[0] ≈ 3.742 m
+      L[0] ≈ 630.3 cd/m²
+      A_p[0] ≈ 0.1689 m²  →  ω[0] ≈ 0.01207 sr
+    """
+
+    LDT_SAMPLE11 = DATA_DIR / "sample_11.ldt"
+
+    @pytest.fixture(scope="class")
+    def ldt(self):
+        return LdtReader.read(self.LDT_SAMPLE11)
+
+    @pytest.fixture(scope="class")
+    def lum(self, ldt):
+        return LuminanceCalculator.compute(ldt, full=True)
+
+    @pytest.fixture(scope="class")
+    def grid_cw(self):
+        """4H×8H, SHR=1 — 32 luminaires, crosswise."""
+        return UgrGrid(4, 8, shr=1.0)
+
+    @pytest.fixture(scope="class")
+    def angles_cw(self, grid_cw):
+        return grid_cw.angles("crosswise")
+
+    @pytest.fixture(scope="class")
+    def phot_cw(self, lum, angles_cw):
+        _, _, C, gamma, r = angles_cw
+        return UgrPhotometry.compute(lum, C, gamma, r)
+
+    # ------------------------------------------------------------------
+    # Output structure
+    # ------------------------------------------------------------------
+
+    def test_shape_matches_grid(self, angles_cw, phot_cw):
+        """L and omega have same length as the valid luminaire count."""
+        _, _, C, _, _ = angles_cw
+        L, omega = phot_cw
+        assert L.shape == (len(C),)
+        assert omega.shape == (len(C),)
+
+    def test_l_nonneg(self, phot_cw):
+        """All luminance values are non-negative."""
+        L, _ = phot_cw
+        assert np.all(L >= 0.0)
+
+    def test_omega_positive(self, phot_cw):
+        """All solid angles are strictly positive (luminaire area > 0)."""
+        _, omega = phot_cw
+        assert np.all(omega > 0.0)
+
+    def test_all_finite(self, phot_cw):
+        """No NaN or inf in L or omega."""
+        L, omega = phot_cw
+        assert np.all(np.isfinite(L))
+        assert np.all(np.isfinite(omega))
+
+    # ------------------------------------------------------------------
+    # Delegation — verify compute() calls at() and projected_area()
+    # ------------------------------------------------------------------
+
+    def test_l_matches_at(self, lum, angles_cw):
+        """L array matches direct calls to lum_result.at() element-wise."""
+        _, _, C, gamma, r = angles_cw
+        L, _ = UgrPhotometry.compute(lum, C, gamma, r)
+        L_direct = lum.at(c_deg=C, g_deg=gamma)
+        assert np.allclose(L, L_direct, rtol=1e-10)
+
+    def test_omega_matches_formula(self, lum, angles_cw):
+        """ω = A_proj / r² matches direct projected_area() / r² element-wise."""
+        _, _, C, gamma, r = angles_cw
+        _, omega = UgrPhotometry.compute(lum, C, gamma, r)
+        A_p = lum.projected_area(c_deg=C, g_deg=gamma)
+        omega_direct = A_p / r**2
+        assert np.allclose(omega, omega_direct, rtol=1e-10)
+
+    # ------------------------------------------------------------------
+    # Numerical spot-checks
+    # ------------------------------------------------------------------
+
+    def test_l_spot(self, lum, angles_cw):
+        """L[0] ≈ 630.3 cd/m² for first crosswise luminaire of sample_11."""
+        _, _, C, gamma, r = angles_cw
+        L, _ = UgrPhotometry.compute(lum, C, gamma, r)
+        assert L[0] == pytest.approx(630.3, abs=1.0)
+
+    def test_omega_spot(self, lum, angles_cw):
+        """ω[0] ≈ 0.01207 sr for first crosswise luminaire of sample_11."""
+        _, _, C, gamma, r = angles_cw
+        _, omega = UgrPhotometry.compute(lum, C, gamma, r)
+        assert omega[0] == pytest.approx(0.01207, rel=1e-3)
+
+    # ------------------------------------------------------------------
+    # Physical scaling laws
+    # ------------------------------------------------------------------
+
+    def test_l_independent_of_r(self, lum, angles_cw):
+        """L does not depend on r_m — only on (C, γ) via at()."""
+        _, _, C, gamma, r = angles_cw
+        L1, _ = UgrPhotometry.compute(lum, C, gamma, r)
+        L2, _ = UgrPhotometry.compute(lum, C, gamma, 2.0 * r)
+        assert np.allclose(L1, L2, rtol=1e-10)
+
+    def test_omega_scales_inversely_with_r_squared(self, lum, angles_cw):
+        """Doubling r halves ω by 4 (inverse square law)."""
+        _, _, C, gamma, r = angles_cw
+        _, omega1 = UgrPhotometry.compute(lum, C, gamma, r)
+        _, omega2 = UgrPhotometry.compute(lum, C, gamma, 2.0 * r)
+        assert np.allclose(omega2, omega1 / 4.0, rtol=1e-10)
+
+    # ------------------------------------------------------------------
+    # Endwise orientation
+    # ------------------------------------------------------------------
+
+    def test_endwise_runs(self, lum, grid_cw):
+        """compute() works for endwise orientation without error."""
+        R, T, C, gamma, r = grid_cw.angles("endwise")
+        L, omega = UgrPhotometry.compute(lum, C, gamma, r)
+        assert L.shape == C.shape
+        assert omega.shape == C.shape
+
+    def test_endwise_differs_from_crosswise(self, lum, grid_cw):
+        """Crosswise and endwise give different L arrays (different C angles)."""
+        _, _, C_cw, g_cw, r_cw = grid_cw.angles("crosswise")
+        _, _, C_ew, g_ew, r_ew = grid_cw.angles("endwise")
+        L_cw, _ = UgrPhotometry.compute(lum, C_cw, g_cw, r_cw)
+        L_ew, _ = UgrPhotometry.compute(lum, C_ew, g_ew, r_ew)
+        assert not np.allclose(L_cw, L_ew)

@@ -1,7 +1,7 @@
 # CONTEXT — eulumdat-ugr
 
 ## Statut
-- Package : **en cours — étapes 0, 1, 2, 3, 4 complétées**
+- Package : **en cours — étapes 0, 1, 2, 3, 4, 5 complétées**
 - Repo GitHub prévu : https://github.com/123VincentB/eulumdat-ugr
 - PyPI : stub réservé
 - Environnement virtuel : `eulumdat-ugr/.venv/`
@@ -478,6 +478,7 @@ dependencies = [
 | 0.0.1 | 2026-03 | Squelette projet + guth.py (Table 4.1 CIE 117, 25 tests) |
 | 0.0.2 | 2026-03 | geometry.py — UgrGrid, grille luminaires, filtres T/R et γ (25 tests) |
 | 0.0.3 | 2026-03 | background.py — flux zonaux 10° milieux, LORL, Lb × 5 réflectances (13 tests) |
+| 0.0.4 | 2026-03 | photometry.py — L_i, ω_i vectorisés depuis LuminanceResult (12 tests) |
 
 ---
 
@@ -510,12 +511,11 @@ dependencies = [
 - ✓ Validé contre Table 8 CIE 190 (k=1,33 : F_DF=0,390 ✓, F_DW=0,260 ✓)
 - ✓ 13 tests passants
 
-### Étape 5 — `photometry.py`
-- Pour chaque luminaire i de la grille :
-  - L_i = `result.at(C_i, γ_i)` (uncorrected, Φ₀=1000 lm)
-  - A_p = `result.projected_area(C_i, γ_i)`
-  - ω_i = A_p / r²_i
-- Tests : vérifier cohérence L, ω sur cas simples
+### Étape 5 ✓ — `photometry.py`
+- ✓ `UgrPhotometry.compute(lum_result, C_deg, gamma_deg, r_m)` → `(L, omega)`
+- ✓ L_i = `result.at(C_i, γ_i)`, ω_i = `result.projected_area(C_i, γ_i)` / r²_i
+- ✓ Entièrement vectorisé (numpy), `full=True` requis
+- ✓ 12 tests passants
 
 ### Étape 6 — `ugr.py`
 - `UgrCalculator.compute(ldt, _shr=0.25)` : point d'entrée principal
