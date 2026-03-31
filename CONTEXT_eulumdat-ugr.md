@@ -1,7 +1,7 @@
 # CONTEXT — eulumdat-ugr
 
 ## Statut
-- Package : **en cours — étapes 0, 1, 2, 3, 4, 5 complétées**
+- Package : **en cours — étapes 0, 1, 2, 3, 4, 5, 6 complétées**
 - Repo GitHub prévu : https://github.com/123VincentB/eulumdat-ugr
 - PyPI : stub réservé
 - Environnement virtuel : `eulumdat-ugr/.venv/`
@@ -479,6 +479,7 @@ dependencies = [
 | 0.0.2 | 2026-03 | geometry.py — UgrGrid, grille luminaires, filtres T/R et γ (25 tests) |
 | 0.0.3 | 2026-03 | background.py — flux zonaux 10° milieux, LORL, Lb × 5 réflectances (13 tests) |
 | 0.0.4 | 2026-03 | photometry.py — L_i, ω_i vectorisés depuis LuminanceResult (12 tests) |
+| 0.0.5 | 2026-03 | ugr.py — tableau UGR 19×10 complet ; background.py étendu 19 salles ; GuthTable.p_vec() (90 tests) |
 
 ---
 
@@ -517,13 +518,17 @@ dependencies = [
 - ✓ Entièrement vectorisé (numpy), `full=True` requis
 - ✓ 12 tests passants
 
-### Étape 6 — `ugr.py`
-- `UgrCalculator.compute(ldt, _shr=0.25)` : point d'entrée principal
-- Orchestre geometry + photometry + guth + background
-- Calcul Σ L²_i · ω_i / p²_i
-- UGR uncorrected = 8·log10(0.25/Lb₀ · Σ)
-- Correction flux réel : UGR(Φ) = UGR(Φ₀) + 8·log10(Φ/Φ₀)
-- `UgrResult.table()` → liste de 4 dicts
+### Étape 6 ✓ — `ugr.py`
+- ✓ `UgrCalculator.compute(ldt, _shr=0.25)` : point d'entrée principal
+- ✓ `background.py` étendu : F_GL et F_T pour les 19 salles (Tables 4 et 5 CIE 190)
+- ✓ `GuthTable.p_vec(h_r, t_r)` ajouté dans `guth.py` (vectorisé)
+- ✓ Calcul direct flux réel (équivalent corrected) : UGR = 8·log10(0.25/Lb · Σ L²ω/p²)
+- ✓ `UgrResult.values` shape (19, 10) — tableau UGR complet
+- ✓ `UgrResult.to_csv()` → chaîne CSV 19×10
+- ✓ 15 tests passants (3 GuthPVec + 12 UgrCalculator)
+- ✓ Validation sample_11 (SHR=1.0) vs CIE 190 : max=0.138, mean=0.046 UGR
+- ✓ Validation sample_11 (SHR=0.25) vs DIALux : max=0.371, mean=0.131 UGR
+- ✓ Validation sample_11 (SHR=0.25) vs Relux  : max=0.432, mean=0.048 UGR
 
 ### Étape 7 — Validation finale
 - Tester SHR=1.0 → comparer contre exemples CIE 190

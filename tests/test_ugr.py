@@ -30,6 +30,9 @@ from eulumdat_ugr.background import BackgroundLuminance
 from eulumdat_ugr.geometry import UgrGrid
 from eulumdat_ugr.guth import GuthTable
 from eulumdat_ugr.photometry import UgrPhotometry
+from eulumdat_ugr.ugr import UgrCalculator, UgrResult
+
+REF_DIR = Path(__file__).parent.parent / "data" / "reference"
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "input"
 
@@ -761,3 +764,197 @@ class TestUgrPhotometry:
         L_cw, _ = UgrPhotometry.compute(lum, C_cw, g_cw, r_cw)
         L_ew, _ = UgrPhotometry.compute(lum, C_ew, g_ew, r_ew)
         assert not np.allclose(L_cw, L_ew)
+
+
+# ---------------------------------------------------------------------------
+# TestGuthPVec — vectorized Guth index
+# ---------------------------------------------------------------------------
+
+
+class TestGuthPVec:
+    """GuthTable.p_vec() returns same values as the scalar p() method."""
+
+    def test_scalar_equivalence(self):
+        """p_vec([h_r], [t_r]) == p(h_r, t_r) for several points."""
+        test_cases = [
+            (0.0, 0.0),
+            (0.5, 0.0),
+            (0.5, 0.5),
+            (1.0, 1.0),
+            (1.9, 3.0),
+        ]
+        for h_r, t_r in test_cases:
+            scalar = GuthTable.p(h_r, t_r)
+            vec = GuthTable.p_vec(
+                np.array([h_r], dtype=float),
+                np.array([t_r], dtype=float),
+            )
+            assert float(vec[0]) == pytest.approx(scalar, rel=1e-9), (
+                f"Mismatch at h_r={h_r}, t_r={t_r}"
+            )
+
+    def test_array_shape(self):
+        """p_vec returns array with same shape as input."""
+        h = np.array([0.5, 1.0, 0.3])
+        t = np.array([0.0, 0.5, 1.5])
+        result = GuthTable.p_vec(h, t)
+        assert result.shape == (3,)
+
+    def test_out_of_range_nan(self):
+        """Points outside the table or near NaN cells return np.nan."""
+        h = np.array([5.0])
+        t = np.array([0.0])
+        result = GuthTable.p_vec(h, t)
+        assert np.isnan(result[0])
+
+
+# ---------------------------------------------------------------------------
+# TestUgrCalculator — step 6: full 19×10 UGR table
+# ---------------------------------------------------------------------------
+
+
+def _load_ref_csv(path: Path) -> np.ndarray:
+    """Load a 19×10 reference CSV.  '<10.0' entries are replaced by 9.9."""
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            vals = []
+            for v in line.split(","):
+                v = v.strip()
+                if v.startswith("<"):
+                    vals.append(float(v[1:]))
+                else:
+                    vals.append(float(v))
+            rows.append(vals)
+    return np.array(rows, dtype=float)
+
+
+class TestUgrCalculator:
+    """
+    Tests for UgrCalculator.compute() — full 19×10 UGR table.
+
+    sample_11.ldt = CIE 190:2010 reference luminaire.
+    - SHR=1.0 → compare against ugr_table_11_cie190.csv (CIE published values)
+    - SHR=0.25 → compare against ugr_table_11_Dialux.csv and ugr_table_11_Relux.csv
+    """
+
+    LDT_SAMPLE11 = DATA_DIR / "sample_11.ldt"
+    TOL_CIE = 0.6   # ±0.6 UGR for CIE 190 (slight algorithmic differences expected)
+    TOL_SW = 0.5    # ±0.5 UGR for software references
+
+    @pytest.fixture(scope="class")
+    def ldt(self):
+        return LdtReader.read(self.LDT_SAMPLE11)
+
+    @pytest.fixture(scope="class")
+    def result_shr1(self, ldt):
+        """Full UGR table with SHR=1.0 for CIE 190 validation."""
+        return UgrCalculator.compute(ldt, _shr=1.0)
+
+    @pytest.fixture(scope="class")
+    def result_shr025(self, ldt):
+        """Full UGR table with SHR=0.25 for software validation."""
+        return UgrCalculator.compute(ldt, _shr=0.25)
+
+    # ------------------------------------------------------------------
+    # Output structure
+    # ------------------------------------------------------------------
+
+    def test_returns_ugr_result(self, result_shr025):
+        """compute() returns a UgrResult instance."""
+        assert isinstance(result_shr025, UgrResult)
+
+    def test_values_shape(self, result_shr025):
+        """values array has shape (19, 10)."""
+        assert result_shr025.values.shape == (19, 10)
+
+    def test_values_finite(self, result_shr025):
+        """All values are finite (no NaN in a normal luminaire)."""
+        assert np.all(np.isfinite(result_shr025.values)), (
+            f"NaN/Inf found: {np.argwhere(~np.isfinite(result_shr025.values))}"
+        )
+
+    def test_ugr_range(self, result_shr025):
+        """UGR values are in a physically plausible range [0, 40]."""
+        v = result_shr025.values
+        assert np.all(v >= 0) and np.all(v <= 40)
+
+    def test_crosswise_endwise_differ(self, result_shr025):
+        """Crosswise (cols 0-4) and endwise (cols 5-9) are different for sample_11."""
+        cw = result_shr025.values[:, :5]
+        ew = result_shr025.values[:, 5:]
+        assert not np.allclose(cw, ew)
+
+    def test_to_csv_shape(self, result_shr025):
+        """to_csv() returns 19 comma-separated lines."""
+        csv = result_shr025.to_csv()
+        lines = [l for l in csv.splitlines() if l.strip()]
+        assert len(lines) == 19
+        assert all(len(l.split(",")) == 10 for l in lines)
+
+    # ------------------------------------------------------------------
+    # Validation — CIE 190:2010 reference (SHR=1.0)
+    # ------------------------------------------------------------------
+
+    def test_vs_cie190_max_deviation(self, result_shr1):
+        """Max deviation from CIE 190 published table ≤ 0.6 UGR (SHR=1.0)."""
+        ref = _load_ref_csv(REF_DIR / "ugr_table_11_cie190.csv")
+        calc = result_shr1.values
+        diff = np.abs(calc - ref)
+        max_diff = float(diff.max())
+        assert max_diff <= self.TOL_CIE, (
+            f"Max deviation vs CIE 190: {max_diff:.2f} UGR\n"
+            f"Worst cell: row={int(np.argmax(diff) // 10)}, "
+            f"col={int(np.argmax(diff) % 10)}"
+        )
+
+    def test_vs_cie190_mean_deviation(self, result_shr1):
+        """Mean absolute deviation from CIE 190 table ≤ 0.3 UGR."""
+        ref = _load_ref_csv(REF_DIR / "ugr_table_11_cie190.csv")
+        mean_diff = float(np.abs(result_shr1.values - ref).mean())
+        assert mean_diff <= 0.3, f"Mean deviation vs CIE 190: {mean_diff:.3f} UGR"
+
+    # ------------------------------------------------------------------
+    # Validation — DIALux reference (SHR=0.25)
+    # ------------------------------------------------------------------
+
+    def test_vs_dialux_max_deviation(self, result_shr025):
+        """Max deviation from DIALux reference ≤ 0.5 UGR (SHR=0.25)."""
+        ref = _load_ref_csv(REF_DIR / "ugr_table_11_Dialux.csv")
+        diff = np.abs(result_shr025.values - ref)
+        max_diff = float(diff.max())
+        assert max_diff <= self.TOL_SW, (
+            f"Max deviation vs DIALux: {max_diff:.2f} UGR\n"
+            f"Worst cell: row={int(np.argmax(diff) // 10)}, "
+            f"col={int(np.argmax(diff) % 10)}"
+        )
+
+    def test_vs_dialux_mean_deviation(self, result_shr025):
+        """Mean absolute deviation from DIALux reference ≤ 0.2 UGR."""
+        ref = _load_ref_csv(REF_DIR / "ugr_table_11_Dialux.csv")
+        mean_diff = float(np.abs(result_shr025.values - ref).mean())
+        assert mean_diff <= 0.2, f"Mean deviation vs DIALux: {mean_diff:.3f} UGR"
+
+    # ------------------------------------------------------------------
+    # Validation — Relux reference (SHR=0.25)
+    # ------------------------------------------------------------------
+
+    def test_vs_relux_max_deviation(self, result_shr025):
+        """Max deviation from Relux reference ≤ 0.5 UGR (SHR=0.25)."""
+        ref = _load_ref_csv(REF_DIR / "ugr_table_11_Relux.csv")
+        diff = np.abs(result_shr025.values - ref)
+        max_diff = float(diff.max())
+        assert max_diff <= self.TOL_SW, (
+            f"Max deviation vs Relux: {max_diff:.2f} UGR\n"
+            f"Worst cell: row={int(np.argmax(diff) // 10)}, "
+            f"col={int(np.argmax(diff) % 10)}"
+        )
+
+    def test_vs_relux_mean_deviation(self, result_shr025):
+        """Mean absolute deviation from Relux reference ≤ 0.2 UGR."""
+        ref = _load_ref_csv(REF_DIR / "ugr_table_11_Relux.csv")
+        mean_diff = float(np.abs(result_shr025.values - ref).mean())
+        assert mean_diff <= 0.2, f"Mean deviation vs Relux: {mean_diff:.3f} UGR"

@@ -159,3 +159,32 @@ class GuthTable:
 
         result = interp([[t_r, h_r]])
         return float(result[0])
+
+    @classmethod
+    def p_vec(cls, h_r: np.ndarray, t_r: np.ndarray) -> np.ndarray:
+        """
+        Vectorized Guth position index.
+
+        Parameters
+        ----------
+        h_r : array-like
+            H/R values.  Absolute values are used.
+        t_r : array-like
+            T/R values.  Absolute values are used.
+
+        Returns
+        -------
+        np.ndarray
+            Position index p for each input pair.  np.nan where the point is
+            outside the table range or adjacent to a missing cell.
+        """
+        interp = cls._interpolator
+        if interp is None:
+            interp = cls._build_interpolator()
+            cls._interpolator = interp
+
+        h_r = np.abs(np.asarray(h_r, dtype=np.float64))
+        t_r = np.abs(np.asarray(t_r, dtype=np.float64))
+
+        points = np.stack([t_r, h_r], axis=-1)
+        return interp(points)
