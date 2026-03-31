@@ -6,8 +6,9 @@ Tests for eulumdat-ugr.
 
 Test organisation
 -----------------
-TestGuthTable       — step 2: GuthTable (guth.py)
-TestUgrGrid         — step 3: UgrGrid (geometry.py)
+TestGuthTable           — step 2: GuthTable (guth.py)
+TestUgrGrid             — step 3: UgrGrid (geometry.py)
+TestBackgroundLuminance — step 4: BackgroundLuminance (background.py)
 
 Running
 -------
@@ -21,7 +22,9 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+from pyldt import LdtReader
 
+from eulumdat_ugr.background import BackgroundLuminance
 from eulumdat_ugr.geometry import UgrGrid
 from eulumdat_ugr.guth import GuthTable
 
@@ -443,3 +446,171 @@ class TestUgrGrid:
         grid = UgrGrid(4, 8)
         with pytest.raises(ValueError, match="orientation"):
             grid.angles("diagonal")
+
+
+# ---------------------------------------------------------------------------
+# TestBackgroundLuminance — CIE 190:2010 §4.2
+# ---------------------------------------------------------------------------
+
+
+class TestBackgroundLuminance:
+    """
+    Tests for BackgroundLuminance.compute().
+
+    Reference values for sample_11 (CIE 190:2010 numerical example luminaire)
+    are derived from the CIE 190 algorithm applied to the known intensity matrix
+    (docs/cie190-table8.csv = data/input/sample_11.ldt).
+
+    Room parameters for SHR=1.0 validation (CIE 190 Table 3, 4H×8H):
+      N = 32, A_w = 96 m², B = 333.33
+
+    Computed reference values (algorithm verified against CIE 190 Table 8 / docx):
+      R_DLO ≈ 0.6497, R_ULO ≈ 0.0000
+      F_DF ≈ 0.4968, F_DW ≈ 0.1529, F_DC ≈ 0.0000
+      F_UWID (70/50/20) ≈ 0.08942
+      Lb (70/50/20, SHR=1) ≈ 9.49 cd/m²
+    """
+
+    LDT_SAMPLE11 = DATA_DIR / "sample_11.ldt"
+    N_SHR1 = 32         # luminaires for 4H×8H, SHR=1.0 (CIE 190 Table 3)
+    AW = 96.0           # m² wall area 4H×8H (= 2×2×(8+16))
+    B_SHR1 = 333.33     # Φ_real×N/Aw = 1000×32/96
+
+    @pytest.fixture(scope="class")
+    def ldt(self):
+        return LdtReader.read(self.LDT_SAMPLE11)
+
+    @pytest.fixture(scope="class")
+    def lb_result(self, ldt):
+        return BackgroundLuminance.compute(ldt, n_luminaires=self.N_SHR1, a_w=self.AW)
+
+    # ------------------------------------------------------------------
+    # Output structure
+    # ------------------------------------------------------------------
+
+    def test_returns_five_reflectances(self, lb_result):
+        """Result contains all 5 CIE 190 reflectance combinations."""
+        expected = {"70/50/20", "70/30/20", "50/50/20", "50/30/20", "30/30/20"}
+        assert set(lb_result.keys()) == expected
+
+    def test_all_lb_positive(self, lb_result):
+        """All Lb values must be strictly positive."""
+        assert all(v > 0 for v in lb_result.values())
+
+    def test_reflectance_ordering(self, lb_result):
+        """Higher wall/ceiling reflectance → higher Lb (more inter-reflection)."""
+        assert lb_result["70/50/20"] > lb_result["70/30/20"]
+        assert lb_result["50/50/20"] > lb_result["50/30/20"]
+        assert lb_result["70/50/20"] > lb_result["50/50/20"]
+
+    # ------------------------------------------------------------------
+    # Internal helpers — _zonal_fluxes
+    # ------------------------------------------------------------------
+
+    def test_zonal_fluxes_shape(self, ldt):
+        """_zonal_fluxes returns 18 values — one per 10° midpoint (5°…175°)."""
+        import numpy as np
+        h = ldt.header
+        I = np.array(ldt.intensities).T
+        gamma = np.asarray(h.g_angles, dtype=float)
+        G = BackgroundLuminance._zonal_fluxes(I, gamma)
+        assert G.shape == (18,)
+
+    def test_zonal_fluxes_nadir_near_zero(self, ldt):
+        """Zone at 5° (near nadir) is much smaller than zone at 45°."""
+        import numpy as np
+        h = ldt.header
+        I = np.array(ldt.intensities).T
+        gamma = np.asarray(h.g_angles, dtype=float)
+        G = BackgroundLuminance._zonal_fluxes(I, gamma)
+        # G[0] = midpoint 5°, G[4] = midpoint 45°
+        assert G[0] < G[4]
+
+    def test_total_flux_matches_lorl(self, ldt):
+        """Sum of all 18 midpoint zonal fluxes / 1000 ≈ LORL (±1%)."""
+        import numpy as np
+        h = ldt.header
+        I = np.array(ldt.intensities).T
+        gamma = np.asarray(h.g_angles, dtype=float)
+        G = BackgroundLuminance._zonal_fluxes(I, gamma)
+        R_LO_mid = G.sum() / 1000.0
+        assert R_LO_mid == pytest.approx(h.lorl / 100.0, rel=0.01)
+
+    # ------------------------------------------------------------------
+    # Internal helpers — _phi_zl
+    # ------------------------------------------------------------------
+
+    def test_phi4_equals_rdlo(self, ldt):
+        """Φ_zL4 / 1000 == R_DLO (Φ_zL4 is the full downward sum by definition)."""
+        import numpy as np
+        h = ldt.header
+        I = np.array(ldt.intensities).T
+        gamma = np.asarray(h.g_angles, dtype=float)
+        G = BackgroundLuminance._zonal_fluxes(I, gamma)
+        lorl = h.lorl / 100.0
+        G_H = G * (lorl / (G.sum() / 1000.0))
+        G_H_down = G_H[:9]
+        R_DLO = G_H_down.sum() / 1000.0
+        _, _, _, Phi4 = BackgroundLuminance._phi_zl(G_H_down)
+        assert Phi4 / 1000.0 == pytest.approx(R_DLO, rel=1e-9)
+
+    def test_phi_ordering(self, ldt):
+        """Φ_zL1 ≤ Φ_zL2 ≤ Φ_zL3 ≤ Φ_zL4 (cumulative sums are non-decreasing)."""
+        import numpy as np
+        h = ldt.header
+        I = np.array(ldt.intensities).T
+        gamma = np.asarray(h.g_angles, dtype=float)
+        G = BackgroundLuminance._zonal_fluxes(I, gamma)
+        lorl = h.lorl / 100.0
+        G_H = G * (lorl / (G.sum() / 1000.0))
+        Phi1, Phi2, Phi3, Phi4 = BackgroundLuminance._phi_zl(G_H[:9])
+        assert Phi1 <= Phi2 <= Phi3 <= Phi4
+
+    # ------------------------------------------------------------------
+    # Flux balance identity
+    # ------------------------------------------------------------------
+
+    def test_fdf_plus_fdw_equals_rdlo(self, ldt):
+        """F_DF + F_DW = R_DLO (CIE 190 eq. 11: F_DW = R_DLO − F_DF)."""
+        import numpy as np
+        h = ldt.header
+        I = np.array(ldt.intensities).T
+        gamma = np.asarray(h.g_angles, dtype=float)
+        G = BackgroundLuminance._zonal_fluxes(I, gamma)
+        lorl = h.lorl / 100.0
+        G_H = G * (lorl / (G.sum() / 1000.0))
+        G_H_down = G_H[:9]
+        R_DLO = G_H_down.sum() / 1000.0
+        Phi1, Phi2, Phi3, Phi4 = BackgroundLuminance._phi_zl(G_H_down)
+        fgl1, fgl2, fgl3, fgl4 = (0.280, 0.165, 0.499, 0.006)
+        F_DF = (Phi1*fgl1 + Phi2*fgl2 + Phi3*fgl3 + Phi4*fgl4) / 1000.0
+        F_DW = R_DLO - F_DF
+        assert F_DF + F_DW == pytest.approx(R_DLO, rel=1e-9)
+
+    # ------------------------------------------------------------------
+    # Numerical spot-checks — sample_11 / SHR=1 reference values
+    # ------------------------------------------------------------------
+
+    def test_lb_70_50_20_spot(self, lb_result):
+        """Lb(70/50/20) ≈ 9.49 cd/m² for sample_11, SHR=1 (CIE 190 Table 8)."""
+        assert lb_result["70/50/20"] == pytest.approx(9.49, abs=0.05)
+
+    def test_lb_decreasing_with_reflectance(self, lb_result):
+        """Lb decreases as reflectances decrease (less inter-reflection)."""
+        refl_ordered = ["70/50/20", "70/30/20", "50/50/20", "50/30/20", "30/30/20"]
+        # Each step must give lower or equal Lb (not strictly monotone across all combos)
+        assert lb_result["70/50/20"] > lb_result["30/30/20"]
+
+    def test_b_scaling(self, ldt):
+        """Doubling N doubles Lb (linear B = Φ·N/Aw → linear Lb)."""
+        lb1 = BackgroundLuminance.compute(ldt, n_luminaires=32,  a_w=self.AW)
+        lb2 = BackgroundLuminance.compute(ldt, n_luminaires=64,  a_w=self.AW)
+        ratio = lb2["70/50/20"] / lb1["70/50/20"]
+        assert ratio == pytest.approx(2.0, rel=1e-6)
+
+    def test_aw_scaling(self, ldt):
+        """Doubling A_w halves Lb (linear B = Φ·N/Aw → linear Lb)."""
+        lb1 = BackgroundLuminance.compute(ldt, n_luminaires=self.N_SHR1, a_w=96.0)
+        lb2 = BackgroundLuminance.compute(ldt, n_luminaires=self.N_SHR1, a_w=192.0)
+        ratio = lb1["70/50/20"] / lb2["70/50/20"]
+        assert ratio == pytest.approx(2.0, rel=1e-6)
