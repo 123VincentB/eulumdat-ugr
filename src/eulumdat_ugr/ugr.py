@@ -29,6 +29,8 @@ Lb depends only on the room geometry (N, A_w, room_idx) and the luminaire's
 photometric distribution.  It is identical for crosswise and endwise observation.
 """
 
+import json
+
 import numpy as np
 from eulumdat_luminance import LuminanceCalculator
 
@@ -56,6 +58,50 @@ class UgrResult:
 
     def __init__(self, values: np.ndarray) -> None:
         self.values = values
+
+    def to_json(self, decimals: int = 1, indent: int | None = None) -> str:
+        """
+        Return the UGR table as a JSON string.
+
+        The JSON contains three keys:
+
+        - ``reflectance_configs`` — list of 5 reflectance combinations
+        - ``room_index`` — list of 19 [X/H, Y/H] pairs
+        - ``values`` — 19×10 matrix of UGR values (rounded to *decimals*)
+
+        Parameters
+        ----------
+        decimals : int
+            Number of decimal places for UGR values.  Default 1.
+        indent : int or None
+            Indentation level for pretty-printing.  ``None`` (default) produces
+            compact single-line output; pass e.g. ``2`` for human-readable output.
+        """
+        reflectance_configs = [
+            {"id": 0, "ceiling": 0.7, "walls": 0.5, "plane": 0.2},
+            {"id": 1, "ceiling": 0.7, "walls": 0.3, "plane": 0.2},
+            {"id": 2, "ceiling": 0.5, "walls": 0.5, "plane": 0.2},
+            {"id": 3, "ceiling": 0.5, "walls": 0.3, "plane": 0.2},
+            {"id": 4, "ceiling": 0.3, "walls": 0.3, "plane": 0.2},
+        ]
+        room_index = [list(rc) for rc in _ROOM_CONFIGS]
+        factor = 10 ** decimals
+        values = [
+            [
+                round(float(v) * factor) / factor if not np.isnan(v) else None
+                for v in row
+            ]
+            for row in self.values
+        ]
+        kwargs = {"indent": indent} if indent is not None else {"separators": (",", ":")}
+        return json.dumps(
+            {
+                "reflectance_configs": reflectance_configs,
+                "room_index": room_index,
+                "values": values,
+            },
+            **kwargs,
+        )
 
     def to_csv(self, fmt: str = "{:.1f}") -> str:
         """

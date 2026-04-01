@@ -33,8 +33,8 @@ from eulumdat_ugr.photometry import UgrPhotometry
 from eulumdat_ugr.ugr import UgrCalculator, UgrResult
 
 REF_DIR = Path(__file__).parent.parent / "data" / "reference"
-
 DATA_DIR = Path(__file__).parent.parent / "data" / "input"
+OUTPUT_DIR = Path(__file__).parent.parent / "data" / "output"
 
 
 # ---------------------------------------------------------------------------
@@ -888,12 +888,57 @@ class TestUgrCalculator:
         ew = result_shr025.values[:, 5:]
         assert not np.allclose(cw, ew)
 
-    def test_to_csv_shape(self, result_shr025):
-        """to_csv() returns 19 comma-separated lines."""
-        csv = result_shr025.to_csv()
+    @pytest.mark.parametrize("sid", range(1, 12))
+    def test_to_csv_shape(self, sid):
+        """to_csv() returns 19 comma-separated lines and saves to data/output/."""
+        result = _get_result(sid)
+        csv = result.to_csv()
         lines = [l for l in csv.splitlines() if l.strip()]
         assert len(lines) == 19
         assert all(len(l.split(",")) == 10 for l in lines)
+        out_path = OUTPUT_DIR / f"ugr_table_sample{sid:02d}.csv"
+        out_path.write_text(csv, encoding="utf-8")
+
+    def test_to_json_structure(self, result_shr025):
+        """to_json() returns valid JSON with the expected three-key structure."""
+        import json
+
+        raw = result_shr025.to_json()
+        data = json.loads(raw)
+
+        assert set(data.keys()) == {"reflectance_configs", "room_index", "values"}
+
+        rc = data["reflectance_configs"]
+        assert len(rc) == 5
+        assert rc[0] == {"id": 0, "ceiling": 0.7, "walls": 0.5, "plane": 0.2}
+        assert rc[4] == {"id": 4, "ceiling": 0.3, "walls": 0.3, "plane": 0.2}
+
+        ri = data["room_index"]
+        assert len(ri) == 19
+        assert ri[0] == [2, 2]
+        assert ri[-1] == [12, 8]
+
+        vals = data["values"]
+        assert len(vals) == 19
+        assert all(len(row) == 10 for row in vals)
+
+    def test_to_json_values(self, result_shr025):
+        """to_json() values match result.values rounded to 1 decimal."""
+        import json, math
+
+        data = json.loads(result_shr025.to_json())
+        for r, row in enumerate(data["values"]):
+            for c, v in enumerate(row):
+                expected = result_shr025.values[r, c]
+                if math.isnan(expected):
+                    assert v is None
+                else:
+                    assert v == pytest.approx(round(float(expected), 1), abs=1e-9)
+
+    def test_to_json_saves_file(self, result_shr025):
+        """to_json() output can be written to data/output/ (indented for readability)."""
+        out_path = OUTPUT_DIR / "ugr_table_sample11.json"
+        out_path.write_text(result_shr025.to_json(indent=2), encoding="utf-8")
 
     # ------------------------------------------------------------------
     # Validation — CIE 190:2010 reference (SHR=1.0)

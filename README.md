@@ -25,6 +25,14 @@ print(result.values)
 # Export to CSV
 with open("ugr_table.csv", "w") as f:
     f.write(result.to_csv())
+
+# Export to JSON (compact)
+with open("ugr_table.json", "w") as f:
+    f.write(result.to_json())
+
+# Export to JSON (human-readable)
+with open("ugr_table.json", "w") as f:
+    f.write(result.to_json(indent=2))
 ```
 
 ## Output format
