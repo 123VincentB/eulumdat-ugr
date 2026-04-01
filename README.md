@@ -1,5 +1,10 @@
 # eulumdat-ugr
 
+[![PyPI version](https://img.shields.io/pypi/v/eulumdat-ugr.svg)](https://pypi.org/project/eulumdat-ugr/)
+[![Python](https://img.shields.io/pypi/pyversions/eulumdat-ugr.svg)](https://pypi.org/project/eulumdat-ugr/)
+[![License: MIT](https://img.shields.io/github/license/123VincentB/eulumdat-ugr)](https://github.com/123VincentB/eulumdat-ugr/blob/main/LICENSE)
+[![DOI](https://zenodo.org/badge/1184236539.svg)](https://doi.org/10.5281/zenodo.19367173)
+
 UGR (Unified Glare Rating) calculation from EULUMDAT (.ldt) photometric files — part of the [eulumdat-*](https://pypi.org/project/eulumdat-py/) ecosystem.
 
 Produces the full **19 × 10 UGR table** per CIE 117:1995 and CIE 190:2010, compatible with DIALux and Relux catalogue output.
