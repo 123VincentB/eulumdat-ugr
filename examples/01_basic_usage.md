@@ -1,5 +1,8 @@
 # Basic usage
 
+[![UGR catalogue table — sample](https://raw.githubusercontent.com/123VincentB/eulumdat-ugr/main/examples/ugr_table_sample.jpg)](https://github.com/123VincentB/eulumdat-report#readme)
+
+
 ## Compute the full UGR table
 
 ```python

@@ -9,6 +9,10 @@ UGR (Unified Glare Rating) calculation from EULUMDAT (.ldt) photometric files �
 
 Produces the full **19 × 10 UGR table** per CIE 117:1995 and CIE 190:2010, compatible with DIALux and Relux catalogue output.
 
+## Sample output
+
+[![UGR catalogue table — sample](https://raw.githubusercontent.com/123VincentB/eulumdat-ugr/main/examples/ugr_table_sample.jpg)](https://github.com/123VincentB/eulumdat-report#readme)
+
 ## Installation
 
 ```bash
